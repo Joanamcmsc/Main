@@ -82,6 +82,5 @@ def main():
     receber_mensagem(numero_teste, "listar eletronicos")  # Exemplo de listagem de produtos
     receber_mensagem(numero_teste, "catalogo")  # Exemplo de exibição do catálogo
 
-if __name__ == "__main__":
-    main()
-
+if __name__ == "__main__":bot.py 
+main()

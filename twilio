@@ -1,31 +1,38 @@
-from gettext import install
-import pip
-from twilio.rest import Client # type: ignore
+from twilio.rest import Client  # Biblioteca Twilio para WhatsApp
 import logging
-import time
-import mercadopago # type: ignore
-pip install twilio # type: ignore
+import mercadopago  # Biblioteca Mercado Pago
 
-# Configurações
+# Configurações do Twilio e Mercado Pago
 TWILIO_ACCOUNT_SID = "AC71b1f4f930608343f2205b338c3a61fb"
 TWILIO_AUTH_TOKEN = "6ea23469ac026321bf4f243c598dbea6"
-TWILIO_WHATSAPP_NUMBER = "whatsapp:+5548988224533"  # Número padrão do WhatsApp Sandbox do Twilio
-ADMIN_WHATSAPP_NUMBER = "whatsapp:+5548988224533"  # Seu número verificado
+TWILIO_WHATSAPP_NUMBER = "whatsapp:+5548988224533"  # Número do WhatsApp Sandbox Twilio
+ADMIN_WHATSAPP_NUMBER = "whatsapp:+5548988224533"  # Número verificado do admin
 
 CHAVE_PIX_FIXA = "sua_chave_pix_aqui"
 MERCADO_PAGO_EMAIL = "seu_email_mercadopago@gmail.com"
 ACCESS_TOKEN_MP = "SEU_ACCESS_TOKEN_DO_MERCADO_PAGO"
+LINK_CATALOGO = "https://wa.me/c/554896605599"  # Link do catálogo do WhatsApp Business
 
+# Inicializa o Mercado Pago e Twilio
 mp = mercadopago.SDK(ACCESS_TOKEN_MP)
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-produtos = []
-compras_pendentes = {}
+# Aqui você define seus produtos e categorias manualmente
+catalogo = {
+    "eletronicos": [
+        {"nome": "Smartphone XYZ", "descricao": "Smartphone com 128GB de armazenamento.", "preco": 1999.90, "link": "https://wa.me/p/1234567890"},
+        {"nome": "Notebook ABC", "descricao": "Notebook com processador i7.", "preco": 3599.00, "link": "https://wa.me/p/0987654321"}
+    ],
+    "moda": [
+        {"nome": "Tênis Running", "descricao": "Tênis de corrida confortável.", "preco": 299.99, "link": "https://wa.me/p/1122334455"},
+        {"nome": "Relógio Digital", "descricao": "Relógio com display LED.", "preco": 199.90, "link": "https://wa.me/p/6677889900"}
+    ]
+}
 
-client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
+# Função para enviar mensagens pelo WhatsApp
 def enviar_mensagem(numero, mensagem):
     client.messages.create(
         body=mensagem,
@@ -33,89 +40,48 @@ def enviar_mensagem(numero, mensagem):
         to=numero
     )
 
+# Função de boas-vindas
 def start(numero):
-    mensagem = "Bem-vindo à Innova! Use 'listar' para ver os produtos disponíveis."
+    mensagem = "Bem-vindo à Innova! Use 'listar' para ver os produtos disponíveis ou 'catalogo' para ver nosso catálogo completo."
     enviar_mensagem(numero, mensagem)
 
-def listar_produtos(numero):
-    if not produtos:
-        enviar_mensagem(numero, "Nenhum produto disponível.")
+# Função para listar produtos de uma categoria
+def listar_produtos(numero, categoria):
+    if categoria not in catalogo:
+        enviar_mensagem(numero, "Categoria não encontrada.")
         return
     
-    mensagem = ""
-    for idx, produto in enumerate(produtos, start=1):
-        mensagem += f"{idx}. {produto['nome']}\nDescrição: {produto['descricao']}\nPreço: R$ {produto['preco']:.2f}\n\n"
+    mensagem = f"Produtos da categoria {categoria.capitalize()}:\n\n"
+    for idx, produto in enumerate(catalogo[categoria], start=1):
+        mensagem += f"{idx}. {produto['nome']}\n{produto['descricao']}\nPreço: R$ {produto['preco']:.2f}\n[Ver mais]({produto['link']})\n\n"
+
     enviar_mensagem(numero, mensagem)
 
-def adicionar_produto(numero):
-    enviar_mensagem(numero, "Envie o nome do produto:")
-    # Aqui, você precisa gerenciar o estado da conversa, utilizando armazenamento de estado para rastrear a etapa atual
-
-def receber_nome_produto(numero, nome):
-    # Armazena o nome do produto temporariamente e solicita a descrição
-    # Aqui, você deve gerenciar o armazenamento de dados por usuário
-    enviar_mensagem(numero, "Envie a descrição do produto:")
-
-def processar_compra(numero, idx_produto):
-    produto = produtos[idx_produto - 1]
-    pagamento_id = criar_pagamento(produto)
-    compras_pendentes[numero] = {"produto": produto, "pagamento_id": pagamento_id, "inicio": time.time()}
-    
-    mensagem = f"Por favor, pague R$ {produto['preco']:.2f} usando a chave Pix: {CHAVE_PIX_FIXA}\nID do Pagamento: {pagamento_id}"
+# Função para exibir o link do catálogo completo
+def exibir_catalogo(numero):
+    mensagem = f"Veja nosso catálogo completo aqui: {LINK_CATALOGO}"
     enviar_mensagem(numero, mensagem)
 
-def criar_pagamento(produto):
-    pagamento_data = {
-        "transaction_amount": produto['preco'],
-        "description": produto['nome'],
-        "payment_method_id": "pix",
-        "payer": {
-            "email": MERCADO_PAGO_EMAIL
-        }
-    }
-    pagamento = mp.payment().create(pagamento_data)
-    return pagamento['response']['id']
-
-def verificar_pagamento(numero, pagamento_id):
-    status = verificar_status_pagamento(pagamento_id)
-
-    if status == "approved":
-        if numero in compras_pendentes:
-            produto = compras_pendentes[numero]["produto"]
-            item = produto["item"]
-
-            # Enviar o produto
-            if isinstance(item, str):
-                enviar_mensagem(numero, f"Seu produto: {item}")
-            else:
-                enviar_mensagem(numero, "Pagamento confirmado! Produto entregue.")
-            del compras_pendentes[numero]
-        else:
-            enviar_mensagem(numero, "Erro: Compra não encontrada.")
-    else:
-        enviar_mensagem(numero, "Pagamento ainda não confirmado. Tente novamente em alguns minutos.")
-
-def verificar_status_pagamento(pagamento_id):
-    payment_info = mp.payment().get(pagamento_id)
-    return payment_info["response"]["status"]
-
-# Função principal simulada para chamadas via WhatsApp
+# Função principal para processar as mensagens recebidas
 def receber_mensagem(whatsapp_numero, mensagem):
     if mensagem.lower() == 'start':
         start(whatsapp_numero)
-    elif mensagem.lower() == 'listar':
-        listar_produtos(whatsapp_numero)
-    # Adicionar mais condições conforme o fluxo de mensagens
+    elif mensagem.lower() == 'listar eletronicos':
+        listar_produtos(whatsapp_numero, 'eletronicos')
+    elif mensagem.lower() == 'listar moda':
+        listar_produtos(whatsapp_numero, 'moda')
+    elif mensagem.lower() == 'catalogo':
+        exibir_catalogo(whatsapp_numero)
+    else:
+        enviar_mensagem(whatsapp_numero, "Comando não reconhecido. Use 'listar' seguido da categoria ou 'catalogo' para ver o catálogo completo.")
 
-# Simulação de recebimento de mensagens (Você pode usar um framework Flask ou Django para integrar com a Webhook do Twilio)
+# Simulação de recebimento de mensagens (essa função normalmente será chamada por um webhook que você configurar no Twilio)
 def main():
-    numero_teste = ADMIN_WHATSAPP_NUMBER  # Teste com seu número de WhatsApp
-    receber_mensagem(numero_teste, "start")
-    receber_mensagem(numero_teste, "listar")
+    numero_teste = ADMIN_WHATSAPP_NUMBER  # Número de teste
+    receber_mensagem(numero_teste, "start")  # Exemplo de teste com o comando 'start'
+    receber_mensagem(numero_teste, "listar eletronicos")  # Exemplo de listagem de produtos
+    receber_mensagem(numero_teste, "catalogo")  # Exemplo de exibição do catálogo
 
 if __name__ == "__main__":
     main()
-heroku buildpacks:set heroku/python
-heroku create --buildpack https://github.com/heroku/heroku-buildpack-python.git
-git push heroku main
 
